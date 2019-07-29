@@ -1,0 +1,6 @@
+
+tmp-amd64/
+
+*.pyc
+
+tmp-armhf/
