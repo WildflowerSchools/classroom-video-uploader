@@ -89,7 +89,7 @@ def process_file(honeycomb_client, minioClient, redis, next_script):
                     logging.info("--------------------------------------------------------")
                     logging.info(response.to_json())
                     logging.info("--------------------------------------------------------")
-                    # minioClient.remove_object(BUCKET_NAME, key)
+                    minioClient.remove_object(BUCKET_NAME, key)
                     res = redis.hdel(EVENTS_KEY_ACTIVE, key)
                     logging.info("%s removed from active list %s", key, res)
                 except Exception:

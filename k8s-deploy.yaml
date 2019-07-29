@@ -18,7 +18,7 @@ spec:
         name: uploader
     spec:
       containers:
-      - image: "wildflowerschools/classroom-video-uploader:armhf-v33"
+      - image: "wildflowerschools/classroom-video-uploader:armhf-v34"
         name: uploader
         command: ["python", "-m", "uploader.__init__"]
         securityContext:
@@ -65,7 +65,7 @@ spec:
         name: uploader-cleanup-active
     spec:
       containers:
-      - image: "wildflowerschools/classroom-video-uploader:armhf-v33"
+      - image: "wildflowerschools/classroom-video-uploader:armhf-v34"
         name: uploader-cleanup-active
         command: ["python", "-m", "uploader.cleanup", "--action", "cleanup-active"]
         securityContext:
@@ -111,7 +111,7 @@ spec:
         name: uploader-queue-missed
     spec:
       containers:
-      - image: "wildflowerschools/classroom-video-uploader:armhf-v33"
+      - image: "wildflowerschools/classroom-video-uploader:armhf-v34"
         name: uploader-queue-missed
         command: ["python", "-m", "uploader.cleanup", "--action", "queue-missed"]
         securityContext:
@@ -160,7 +160,7 @@ spec:
 #         name: uploader-queue-monitor
 #     spec:
 #       containers:
-#       - image: "wildflowerschools/classroom-video-uploader:armhf-v33"
+#       - image: "wildflowerschools/classroom-video-uploader:armhf-v34"
 #         name: uploader-queue-monitor
 #         command: ["python", "-m", "uploader.monitor"]
 #         securityContext:
