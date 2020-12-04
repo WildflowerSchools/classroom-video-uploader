@@ -3,15 +3,22 @@ import logging
 import os
 import tempfile
 import time
-# import urllib.parse
 
 from minio import Minio
 from minio.error import NoSuchKey
 from redis import StrictRedis
+import yaml
 
 from honeycomb import HoneycombClient
-from honeycomb.models import DatapointInput, S3FileInput
+from honeycomb.models import DatapointInput, S3FileInput, DataSourceType
+from uploader.metric import emit
 
+
+with open('/boot/wildflower-config.yml', 'r') as fp:
+    config = yaml.safe_load(fp.read())
+
+
+ENVIRONMENT_ID = config.get("environment-id", "unassigned")
 
 EVENTS_KEY = os.environ.get("EVENTS_KEY", 'minio-video-events')
 EVENTS_KEY_ACTIVE = "%s.active" % EVENTS_KEY
@@ -62,19 +69,25 @@ def process_file(honeycomb_client, minioClient, redis, next_script):
         logging.info("uploading %s", key)
         if hasattr(key, "endswith") and not key.endswith(b"mp4"):
             redis.hdel(EVENTS_KEY_ACTIVE, key)
+            logging.info("didn't look like an mp4")
             return
         temp = tempfile.NamedTemporaryFile(delete=False)
         try:
+            logging.info("loading file from minio")
             data = minioClient.fget_object(BUCKET_NAME, key, temp.name)
-            assignment_id = data.metadata.get("X-Amz-Meta-Source")
-            duration = parse_duration(data.metadata.get("X-Amz-Meta-Duration"))
-            ts = fix_ts(data.metadata.get("X-Amz-Meta-Ts"))
+            logging.info(data.metadata)
+            assignment_id = data.metadata.get("x-amz-meta-source")
+            duration = parse_duration(data.metadata.get("x-amz-meta-duration"))
+            ts = fix_ts(data.metadata.get("x-amz-meta-ts"))
             temp.flush()
             temp.close()
+            logging.info('file loaded from minio')
             with open(temp.name, 'rb') as fp:
+                logging.info('preparing upload payload')
                 file_contents = fp.read()
                 dp = DatapointInput(
-                    observer=assignment_id,
+                    source=assignment_id,
+                    source_type=DataSourceType.MEASURED,
                     format="video/mp4",
                     duration=duration,
                     file=S3FileInput(
@@ -82,18 +95,24 @@ def process_file(honeycomb_client, minioClient, redis, next_script):
                         contentType="video/mp4",
                         data=file_contents,
                     ),
-                    observed_time=ts,
+                    timestamp=ts,
                 )
+                logging.info("beginning upload")
                 try:
+                    logging.info("------------------------------------------------------->")
                     response = honeycomb_client.mutation.createDatapoint(dp)
-                    logging.info("--------------------------------------------------------")
+                    logging.info("<-------------------------------------------------------")
                     logging.info(response.to_json())
-                    logging.info("--------------------------------------------------------")
+                    logging.info("-------------------------------------------------------.")
                     minioClient.remove_object(BUCKET_NAME, key)
                     res = redis.hdel(EVENTS_KEY_ACTIVE, key)
                     logging.info("%s removed from active list %s", key, res)
-                except Exception:
+                    emit('wf_camera_uploader', {"success": 1}, {"environment": ENVIRONMENT_ID, "type": "success"})
+                except Exception as e:
+                    # TODO - test for correct exception and reset client when auth fails
                     logging.error("createDatapoint failed")
+                    emit('wf_camera_uploader', {"fail": 1}, {"environment": ENVIRONMENT_ID, "type": "error"})
+                    raise e
         except NoSuchKey:
             # this was probably a re-queue of a failed delete.
             logging.info("%s no longer in minio", key)
@@ -136,10 +155,14 @@ def main():
         "client_id": HONECOMB_CLIENT_ID,
         "client_secret": HONECOMB_CLIENT_SECRET,
     }
-    honeycomb_client = HoneycombClient(uri="https://honeycomb.api.wildflower-tech.org/graphql", client_credentials=client_credentials)
-
     while True:
-        process_file(honeycomb_client, minioClient, redis, next_script)
+        honeycomb_client = HoneycombClient(uri="https://honeycomb.api.wildflower-tech.org/graphql", client_credentials=client_credentials)
+        try:
+            while True:
+                process_file(honeycomb_client, minioClient, redis, next_script)
+        except Exception as e:
+            logging.error("upload failed, {}", e)
+            pass
 
 
 if __name__ == '__main__':

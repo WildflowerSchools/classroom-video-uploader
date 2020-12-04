@@ -7,7 +7,7 @@ metadata:
   labels:
     name: uploader
 spec:
-  replicas: 4
+  replicas: 1
   selector:
     matchLabels:
       name: uploader
@@ -17,8 +17,10 @@ spec:
       labels:
         name: uploader
     spec:
+      dnsPolicy: ClusterFirstWithHostNet
+      enableServiceLinks: true
       containers:
-      - image: "wildflowerschools/classroom-video-uploader:armhf-v34"
+      - image: "wildflowerschools/classroom-video-uploader:v44"
         name: uploader
         command: ["python", "-m", "uploader.__init__"]
         securityContext:
@@ -27,9 +29,11 @@ spec:
           - name: MINIO_BUCKET_NAME
             value: "videos"
           - name: MINIO_HOST
-            value: "minio-service.classroom.svc.cluster.local:9000"
+            value: "minio.classroom:9000"
           - name: UPLOADER_REDIS_HOST
             value: "redis.classroom.svc.cluster.local"
+          - name: TELEGRAF_HOST
+            value: telegraf.tick.svc.cluster.local
         envFrom:
           - secretRef:
               name: minio-settings
@@ -64,8 +68,12 @@ spec:
       labels:
         name: uploader-cleanup-active
     spec:
+      dnsPolicy: ClusterFirstWithHostNet
+      enableServiceLinks: true
+      nodeSelector:
+        wildflower-type: control
       containers:
-      - image: "wildflowerschools/classroom-video-uploader:armhf-v34"
+      - image: "wildflowerschools/classroom-video-uploader:v44"
         name: uploader-cleanup-active
         command: ["python", "-m", "uploader.cleanup", "--action", "cleanup-active"]
         securityContext:
@@ -74,9 +82,11 @@ spec:
           - name: MINIO_BUCKET_NAME
             value: "videos"
           - name: MINIO_HOST
-            value: "minio-service.classroom.svc.cluster.local:9000"
+            value: "minio.classroom:9000"
           - name: UPLOADER_REDIS_HOST
             value: "redis.classroom.svc.cluster.local"
+          - name: TELEGRAF_HOST
+            value: telegraf.tick.svc.cluster.local
         envFrom:
           - secretRef:
               name: minio-settings
@@ -85,10 +95,16 @@ spec:
         volumeMounts:
         - name: boot
           mountPath: /boot
+        - name: videos
+          mountPath: /videos
       volumes:
         - name: boot
           hostPath:
             path: /boot
+            type: Directory
+        - name: videos
+          hostPath:
+            path: /data/videos
             type: Directory
 
 ---
@@ -110,21 +126,27 @@ spec:
       labels:
         name: uploader-queue-missed
     spec:
+      dnsPolicy: ClusterFirstWithHostNet
+      enableServiceLinks: true
+      nodeSelector:
+        wildflower-type: control
       containers:
-      - image: "wildflowerschools/classroom-video-uploader:armhf-v34"
+      - image: "wildflowerschools/classroom-video-uploader:v44"
         name: uploader-queue-missed
         command: ["python", "-m", "uploader.cleanup", "--action", "queue-missed"]
         securityContext:
           privileged: true
         env:
           - name: MAX_QUEUE
-            value: "5000"
+            value: "1600"
           - name: MINIO_BUCKET_NAME
             value: "videos"
           - name: MINIO_HOST
-            value: "minio-service.classroom.svc.cluster.local:9000"
+            value: "minio.classroom:9000"
           - name: UPLOADER_REDIS_HOST
             value: "redis.classroom.svc.cluster.local"
+          - name: TELEGRAF_HOST
+            value: telegraf.tick.svc.cluster.local
         envFrom:
           - secretRef:
               name: minio-settings
@@ -138,36 +160,3 @@ spec:
           hostPath:
             path: /boot
             type: Directory
-
-
-# ---
-# apiVersion: apps/v1
-# kind: Deployment
-# metadata:
-#   namespace: classroom
-#   name: uploader-queue-monitor
-#   labels:
-#     name: uploader-queue-monitor
-# spec:
-#   replicas: 1
-#   selector:
-#     matchLabels:
-#       name: uploader-queue-monitor
-#   template:
-#     metadata:
-#       namespace: classroom
-#       labels:
-#         name: uploader-queue-monitor
-#     spec:
-#       containers:
-#       - image: "wildflowerschools/classroom-video-uploader:armhf-v34"
-#         name: uploader-queue-monitor
-#         command: ["python", "-m", "uploader.monitor"]
-#         securityContext:
-#           privileged: true
-#         env:
-#           - name: UPLOADER_REDIS_HOST
-#             value: "redis.classroom.svc.cluster.local"
-#         envFrom:
-#           - secretRef:
-#               name: honeycomb-client-settings

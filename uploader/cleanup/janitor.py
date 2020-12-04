@@ -1,11 +1,33 @@
 import logging
 import os
 import time
+from subprocess import run
 
+import yaml
+
+from uploader.metric import emit
 from uploader import get_redis, get_minio_client, EVENTS_KEY, EVENTS_KEY_ACTIVE, BUCKET_NAME
 
 
+with open('/boot/wildflower-config.yml', 'r') as fp:
+    config = yaml.safe_load(fp.read())
+
+
+ENVIRONMENT_ID = config.get("environment-id", "unassigned")
 MAX_QUEUE = int(os.environ.get("MAX_QUEUE", 1000))
+
+
+def capture_disk_usage_stats(path="/videos"):
+    resp = run(["du", "-d", "1", path], capture_output=True)
+    lines = resp.stdout.decode('utf8').split('\n')
+    values = {}
+    for line in lines:
+        if len(line):
+            size, path = line.split('\t')
+            if path[0] == "/":
+                path = path[1:]
+            values[path] = int(size)
+    emit('wf_camera_uploader', values, {"environment": ENVIRONMENT_ID, "type": "disk_usage"})
 
 
 def cleanup_active():
@@ -38,7 +60,9 @@ def cleanup_active():
                 key_cache.add(key)
                 ncnt += 1
         old_keys = key_cache
-        logging.info("%s added to queue, %s newly seen", rcnt, ncnt)
+        logging.info("%s removed from queue, %s newly seen", rcnt, ncnt)
+        emit('wf_camera_uploader', {"removed": rcnt, "new": ncnt, "queue": len(keys) - rcnt}, {"environment": ENVIRONMENT_ID, "type": "cleanup"})
+        capture_disk_usage_stats()
         time.sleep(60)
 
 
@@ -62,6 +86,7 @@ def queue_missed():
                     name = obj
                     logging.info("inspecting %s to add items to queue", name)
                     qlen += find_files(name, redis, minioClient, limit)
+        emit('wf_camera_uploader', {"queue": qlen}, {"environment": ENVIRONMENT_ID, "type": "monitor"})
         time.sleep(30)
 
 
