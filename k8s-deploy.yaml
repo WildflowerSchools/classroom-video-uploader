@@ -20,7 +20,7 @@ spec:
       dnsPolicy: ClusterFirstWithHostNet
       enableServiceLinks: true
       containers:
-      - image: "wildflowerschools/classroom-video-uploader:v44"
+      - image: "wildflowerschools/classroom-video-uploader:v50"
         name: uploader
         command: ["python", "-m", "uploader.__init__"]
         securityContext:
@@ -73,7 +73,7 @@ spec:
       nodeSelector:
         wildflower-type: control
       containers:
-      - image: "wildflowerschools/classroom-video-uploader:v44"
+      - image: "wildflowerschools/classroom-video-uploader:v50"
         name: uploader-cleanup-active
         command: ["python", "-m", "uploader.cleanup", "--action", "cleanup-active"]
         securityContext:
@@ -131,7 +131,7 @@ spec:
       nodeSelector:
         wildflower-type: control
       containers:
-      - image: "wildflowerschools/classroom-video-uploader:v44"
+      - image: "wildflowerschools/classroom-video-uploader:v50"
         name: uploader-queue-missed
         command: ["python", "-m", "uploader.cleanup", "--action", "queue-missed"]
         securityContext:

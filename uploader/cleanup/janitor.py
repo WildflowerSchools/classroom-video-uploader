@@ -9,7 +9,7 @@ from uploader.metric import emit
 from uploader import get_redis, get_minio_client, EVENTS_KEY, EVENTS_KEY_ACTIVE, BUCKET_NAME
 
 
-with open('/boot/wildflower-config.yml', 'r') as fp:
+with open('/boot/wildflower-config.yml', 'r', encoding="utf8") as fp:
     config = yaml.safe_load(fp.read())
 
 
@@ -18,7 +18,7 @@ MAX_QUEUE = int(os.environ.get("MAX_QUEUE", 1000))
 
 
 def capture_disk_usage_stats(path="/videos"):
-    resp = run(["du", "-d", "1", path], capture_output=True)
+    resp = run(["du", "-d", "1", path], capture_output=True, check=False)
     lines = resp.stdout.decode('utf8').split('\n')
     values = {}
     for line in lines:

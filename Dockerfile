@@ -1,16 +1,16 @@
-FROM python:3.7-alpine
+FROM python:3.9
 
-RUN apk add --update alpine-sdk glib glib-dev linux-headers
 
 RUN mkdir /app
+WORKDIR /app
 
-RUN pip install --upgrade pip
-RUN pip install git+https://github.com/WildflowerSchools/graphql-python-client-generator.git
-RUN pip install git+https://github.com/WildflowerSchools/wildflower-honeycomb-sdk-py.git
+RUN apt-get update
+RUN apt-get install -y ffmpeg libsm6 libxext6
+
+RUN pip install --upgrade pip opencv-contrib-python
 
 COPY ./uploader /app/uploader
 
 RUN pip install -r /app/uploader/requirements.txt
 
 WORKDIR /app
-

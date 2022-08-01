@@ -13,4 +13,4 @@ def main(action):
 
 
 if __name__ == '__main__':
-    main()
+    main()  # pylint: disable=E1120

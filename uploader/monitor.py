@@ -1,5 +1,4 @@
 import logging
-import os
 import time
 
 from uploader import get_redis, EVENTS_KEY, EVENTS_KEY_ACTIVE
