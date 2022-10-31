@@ -1,4 +1,4 @@
-VERSION ?= 64
+VERSION ?= 68
 
 .PHONY: build
 
@@ -8,7 +8,6 @@ lint-app:
 
 
 build: lint-app
-	docker buildx create --name multiarch
-	docker buildx use multiarch
-	docker buildx build -t wildflowerschools/classroom-video-uploader:v${VERSION} --platform linux/amd64,linux/arm64 -f Dockerfile --push .
-	docker buildx rm multiarch
+	docker buildx create --name uploader-builds --node "v${VERSION}" || true
+	docker buildx use uploader-builds
+	docker buildx build -t wildflowerschools/classroom-video-uploader:v${VERSION} --platform linux/amd64 -f Dockerfile --push .

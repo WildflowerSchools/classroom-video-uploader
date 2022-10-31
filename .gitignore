@@ -6,3 +6,5 @@ tmp-amd64/
 tmp-armhf/
 
 .DS_Store
+
+dist/
