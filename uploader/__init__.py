@@ -78,8 +78,8 @@ def process_file(video_client, minioClient, redis, next_script):
             logging.info("beginning upload")
             try:
                 subpath = f"{ENVIRONMENT_ID}/{key}"
-                response = asyncio.run(video_client.upload_video(subpath))
                 logging.info(subpath)
+                response = asyncio.run(video_client.upload_video(subpath))
                 logging.info(response)
                 minioClient.remove_object(BUCKET_NAME, key)
                 res = redis.hdel(EVENTS_KEY_ACTIVE, key)
