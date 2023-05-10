@@ -1,16 +1,12 @@
-FROM python:3.10.7-slim
+FROM python:3.10.11-slim
 
-
-RUN mkdir /app
 WORKDIR /app
 
-RUN apt-get update
-RUN apt-get install -y ffmpeg libsm6 libxext6
+RUN apt-get update -y && \
+    apt-get install -y ffmpeg libsm6 libxext6 && \
+    pip install --upgrade pip opencv-contrib-python poetry wheel
 
-RUN pip install --upgrade pip opencv-contrib-python
+COPY pyproject.toml poetry.lock ./
+RUN poetry config virtualenvs.create false && poetry install --only main --no-root --no-interaction --no-ansi
 
 COPY ./uploader /app/uploader
-
-RUN pip install -r /app/uploader/requirements.txt
-
-WORKDIR /app

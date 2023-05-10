@@ -9,7 +9,8 @@ from uploader.metric import emit
 from uploader import get_redis, get_minio_client, EVENTS_KEY, EVENTS_KEY_ACTIVE, BUCKET_NAME
 
 
-with open('/boot/wildflower-config.yml', 'r', encoding="utf8") as fp:
+BOOT_CONFIG_PATH = os.environ.get("BOOT_CONFIG_PATH", '/boot/wildflower-config.yml')
+with open(BOOT_CONFIG_PATH, 'r', encoding="utf8") as fp:
     config = yaml.safe_load(fp.read())
 
 
@@ -42,7 +43,7 @@ def cleanup_active():
     old_keys = set()
     while True:
         keys = redis.hkeys(EVENTS_KEY_ACTIVE)
-        logging.info("loaded active keys, %s found", len(keys))
+        logging.info(f"Loaded active keys. {len(keys)} keys found.")
         key_cache = set()
         rcnt = 0
         ncnt = 0
@@ -60,7 +61,7 @@ def cleanup_active():
                 key_cache.add(key)
                 ncnt += 1
         old_keys = key_cache
-        logging.info("%s removed from queue, %s newly seen", rcnt, ncnt)
+        logging.info(f"{rcnt} removed from queue, {ncnt} newly seen")
         emit('wf_camera_uploader', {"removed": rcnt, "new": ncnt, "queue": len(keys) - rcnt}, {"environment": ENVIRONMENT_ID, "type": "cleanup"})
         capture_disk_usage_stats()
         time.sleep(60)
@@ -76,7 +77,7 @@ def queue_missed():
     minioClient = get_minio_client()
     while True:
         qlen = redis.hlen(EVENTS_KEY)
-        logging.info("queue has %s items in it", qlen)
+        logging.info(f"Redis queue has {qlen} items in it")
         if qlen < MAX_QUEUE:
             objects = list(minioClient.list_objects(BUCKET_NAME))
             objects = [obj.object_name for obj in objects if obj.object_name != "frames"]
@@ -84,7 +85,7 @@ def queue_missed():
                 limit = min(100, (MAX_QUEUE - qlen) / len(objects))
                 for obj in objects:
                     name = obj
-                    logging.info("inspecting %s to add items to queue", name)
+                    logging.info(f"Inspecting {name} to add items to queue")
                     qlen += find_files(name, redis, minioClient, limit)
         emit('wf_camera_uploader', {"queue": qlen}, {"environment": ENVIRONMENT_ID, "type": "monitor"})
         time.sleep(30)

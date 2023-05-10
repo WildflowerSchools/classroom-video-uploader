@@ -1,0 +1,89 @@
+version: '3.8'
+
+services:
+  uploader:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "uploader.__init__"]
+    network_mode: "host"
+    depends_on:
+      - redis
+    networks:
+      - classroom-video-store
+    privileged: true
+    environment:
+      - MINIO_BUCKET_NAME=videos
+      - MINIO_HOST=
+      - UPLOADER_REDIS_HOST=redis
+      - TELEGRAF_HOST=
+    volumes:
+      - type: bind
+        source: ./boot/wildflower-config.yml
+        target: /boot/wildflower-config.yml
+    env_file:
+      - .docker.env
+
+  uploader-cleanup-active:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "uploader.cleanup", "--action", "cleanup-active"]
+    network_mode: "host"
+    depends_on:
+      - redis
+    networks:
+      - classroom-video-store
+    privileged: true
+    environment:
+      - MINIO_BUCKET_NAME=videos
+      - MINIO_HOST=
+      - UPLOADER_REDIS_HOST=redis
+      - TELEGRAF_HOST=
+    volumes:
+      - type: bind
+        source: ./boot/wildflower-config.yml
+        target: /boot/wildflower-config.yml
+    env_file:
+      - .docker.env
+
+  uploader-queue-missed:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["python", "-m", "uploader.cleanup", "--action", "queue-missed"]
+    network_mode: "host"
+    depends_on:
+      - redis
+    networks:
+      - classroom-video-store
+    privileged: true
+    environment:
+      - MAX_QUEUE=1600
+      - MINIO_BUCKET_NAME=videos
+      - MINIO_HOST=
+      - UPLOADER_REDIS_HOST=redis
+      - TELEGRAF_HOST=
+    volumes:
+      - type: bind
+        source: ./boot/wildflower-config.yml
+        target: /boot/wildflower-config.yml
+    env_file:
+      - .docker.env
+
+  redis:
+    image: redis:6.2-alpine
+    restart: always
+    ports:
+      - '6379:6379'
+    command: redis-server --save 20 1 --loglevel warning --requirepass eYVX7EwVmmxKPCDmwMtyKVge8oLd2t81
+    volumes:
+      - redis-store:/data
+    networks:
+      - classroom-video-store
+
+volumes:
+  redis-store:
+
+networks:
+  classroom-video-store:

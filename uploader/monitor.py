@@ -15,8 +15,8 @@ def monitor():
     while True:
         waiting = redis.hlen(EVENTS_KEY)
         active = redis.hlen(EVENTS_KEY_ACTIVE)
-        logging.info("waiting keys, %s found", waiting)
-        logging.info("active keys, %s found", active)
+        logging.info(f"waiting keys, {waiting} found")
+        logging.info(f"active keys, {active} found", )
         logging.info("sending to influxdb")
         time.sleep(1)
 

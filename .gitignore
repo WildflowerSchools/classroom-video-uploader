@@ -8,3 +8,7 @@ tmp-armhf/
 .DS_Store
 
 dist/
+
+.docker.env
+
+staging/
