@@ -1,6 +1,10 @@
-VERSION ?= 69
+VERSION ?= 70
 
 .PHONY: build
+
+
+format:
+	@black uploader
 
 
 lint-app:

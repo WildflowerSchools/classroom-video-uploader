@@ -3,7 +3,7 @@ import os
 from telegraf.client import TelegrafClient
 
 
-HOST = os.environ.get("TELEGRAF_HOST", 'localhost')
+HOST = os.environ.get("TELEGRAF_HOST", "localhost")
 
 
 def emit(name, values, tags=None):

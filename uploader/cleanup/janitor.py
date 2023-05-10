@@ -6,11 +6,17 @@ from subprocess import run
 import yaml
 
 from uploader.metric import emit
-from uploader import get_redis, get_minio_client, EVENTS_KEY, EVENTS_KEY_ACTIVE, BUCKET_NAME
+from uploader import (
+    get_redis,
+    get_minio_client,
+    EVENTS_KEY,
+    EVENTS_KEY_ACTIVE,
+    BUCKET_NAME,
+)
 
 
-BOOT_CONFIG_PATH = os.environ.get("BOOT_CONFIG_PATH", '/boot/wildflower-config.yml')
-with open(BOOT_CONFIG_PATH, 'r', encoding="utf8") as fp:
+BOOT_CONFIG_PATH = os.environ.get("BOOT_CONFIG_PATH", "/boot/wildflower-config.yml")
+with open(BOOT_CONFIG_PATH, "r", encoding="utf8") as fp:
     config = yaml.safe_load(fp.read())
 
 
@@ -20,15 +26,19 @@ MAX_QUEUE = int(os.environ.get("MAX_QUEUE", 1000))
 
 def capture_disk_usage_stats(path="/videos"):
     resp = run(["du", "-d", "1", path], capture_output=True, check=False)
-    lines = resp.stdout.decode('utf8').split('\n')
+    lines = resp.stdout.decode("utf8").split("\n")
     values = {}
     for line in lines:
         if len(line):
-            size, path = line.split('\t')
+            size, path = line.split("\t")
             if path[0] == "/":
                 path = path[1:]
             values[path] = int(size)
-    emit('wf_camera_uploader', values, {"environment": ENVIRONMENT_ID, "type": "disk_usage"})
+    emit(
+        "wf_camera_uploader",
+        values,
+        {"environment": ENVIRONMENT_ID, "type": "disk_usage"},
+    )
 
 
 def cleanup_active():
@@ -62,7 +72,11 @@ def cleanup_active():
                 ncnt += 1
         old_keys = key_cache
         logging.info(f"{rcnt} removed from queue, {ncnt} newly seen")
-        emit('wf_camera_uploader', {"removed": rcnt, "new": ncnt, "queue": len(keys) - rcnt}, {"environment": ENVIRONMENT_ID, "type": "cleanup"})
+        emit(
+            "wf_camera_uploader",
+            {"removed": rcnt, "new": ncnt, "queue": len(keys) - rcnt},
+            {"environment": ENVIRONMENT_ID, "type": "cleanup"},
+        )
         capture_disk_usage_stats()
         time.sleep(60)
 
@@ -80,14 +94,20 @@ def queue_missed():
         logging.info(f"Redis queue has {qlen} items in it")
         if qlen < MAX_QUEUE:
             objects = list(minioClient.list_objects(BUCKET_NAME))
-            objects = [obj.object_name for obj in objects if obj.object_name != "frames"]
+            objects = [
+                obj.object_name for obj in objects if obj.object_name != "frames"
+            ]
             if len(objects):
                 limit = min(100, (MAX_QUEUE - qlen) / len(objects))
                 for obj in objects:
                     name = obj
                     logging.info(f"Inspecting {name} to add items to queue")
                     qlen += find_files(name, redis, minioClient, limit)
-        emit('wf_camera_uploader', {"queue": qlen}, {"environment": ENVIRONMENT_ID, "type": "monitor"})
+        emit(
+            "wf_camera_uploader",
+            {"queue": qlen},
+            {"environment": ENVIRONMENT_ID, "type": "monitor"},
+        )
         time.sleep(30)
 
 

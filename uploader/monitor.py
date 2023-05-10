@@ -16,10 +16,12 @@ def monitor():
         waiting = redis.hlen(EVENTS_KEY)
         active = redis.hlen(EVENTS_KEY_ACTIVE)
         logging.info(f"waiting keys, {waiting} found")
-        logging.info(f"active keys, {active} found", )
+        logging.info(
+            f"active keys, {active} found",
+        )
         logging.info("sending to influxdb")
         time.sleep(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     monitor()

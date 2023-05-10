@@ -1,8 +1,11 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from functools import partial
 import logging
 import os
 import time
+import uuid
 
 from minio import Minio
 from minio.error import MinioException
@@ -15,16 +18,20 @@ import video_io.config
 from uploader.metric import emit
 
 
-BOOT_CONFIG_PATH = os.environ.get("BOOT_CONFIG_PATH", '/boot/wildflower-config.yml')
-with open(BOOT_CONFIG_PATH, 'r', encoding="utf8") as fp:
+BOOT_CONFIG_PATH = os.environ.get("BOOT_CONFIG_PATH", "/boot/wildflower-config.yml")
+with open(BOOT_CONFIG_PATH, "r", encoding="utf8") as fp:
     config = yaml.safe_load(fp.read())
 
 
 ENVIRONMENT_ID = config.get("environment-id", "unassigned")
 
-EVENTS_KEY = os.environ.get("EVENTS_KEY", 'minio-video-events')
+UPLOADER_MAX_WORKERS = os.environ.get(
+    "UPLOADER_WORKERS", None
+)  # Will default to ThreadPoolExecutor's preference
+
+EVENTS_KEY = os.environ.get("EVENTS_KEY", "minio-video-events")
 EVENTS_KEY_ACTIVE = f"{EVENTS_KEY}.active"
-BUCKET_NAME = os.environ.get("BUCKET_NAME", 'videos')
+BUCKET_NAME = os.environ.get("BUCKET_NAME", "videos")
 REDIS_HOST = os.environ.get("UPLOADER_REDIS_HOST")
 REDIS_PASSWORD = os.environ.get("UPLOADER_REDIS_PASSWORD", None)
 REDIS_PORT = os.environ.get("UPLOADER_REDIS_PORT", 6379)
@@ -33,9 +40,15 @@ MINIO_KEY = os.environ.get("MINIO_KEY")
 MINIO_SECRET = os.environ.get("MINIO_SECRET")
 
 # Set using ENV var VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY
-VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY = video_io.config.VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY
+VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY = (
+    video_io.config.VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY
+)
 
-logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%Y/%m/%d %I:%M:%S %p', level=logging.DEBUG)
+logging.basicConfig(
+    format="%(asctime)s %(message)s",
+    datefmt="%Y/%m/%d %I:%M:%S %p",
+    level=logging.DEBUG,
+)
 
 
 HERE = os.path.dirname(__file__)
@@ -60,61 +73,85 @@ def parse_duration(dur):
 def fix_ts(ts):
     if "_" in ts:
         dt = datetime.strptime(ts, "%Y_%m_%d_%H_%M-%S")
-        return dt.isoformat() + 'Z'
+        return dt.isoformat() + "Z"
     return ts
 
 
-def process_file(video_client, minioClient, redis, next_script):
-    try:
-        # I think this may be crap, sort of looks like it raises an error if the hash is empty
-        key = next_script(args=[EVENTS_KEY]).decode("utf-8")
-    except Exception as e:
-        logging.error(f"Failed to load next key from Redis cache: {e}")
-        key = None
-        time.sleep(1)
+def process_file(video_client, minio_client, redis, key=None):
+    uid = uuid.uuid4().hex[:8]
 
     if key:
-        logging.info(f"Attempting upload of {key} to video_io service...")
-        if hasattr(key, "endswith") and not (key.endswith("mp4") or key.endswith("h264")):
+        logging.info(f"{uid} - Attempting upload of {key} to video_io service...")
+        if hasattr(key, "endswith") and not (
+            key.endswith("mp4") or key.endswith("h264")
+        ):
             redis.hdel(EVENTS_KEY_ACTIVE, key)
-            logging.info(f"Skipping {key}, file doesn't appear to be an mp4 or h264")
+            logging.info(
+                f"{uid} - Skipping {key}, file doesn't appear to be an mp4 or h264"
+            )
             return
 
         temp_subpath = os.path.normpath(f"{ENVIRONMENT_ID}/{key}")
-        temp_fullpath = os.path.normpath(f"{VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY}/{ENVIRONMENT_ID}/{key}")
+        temp_fullpath = os.path.normpath(
+            f"{VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY}/{ENVIRONMENT_ID}/{key}"
+        )
         try:
-            logging.info(f"Loading file '{BUCKET_NAME}/{key} 'from minio")
-            minioClient.fget_object(BUCKET_NAME, key, temp_fullpath)
-            logging.info(f"Loaded '{BUCKET_NAME}/{key}' and stored temporarily at {temp_fullpath}")
+            logging.info(f"{uid} - Loading file '{BUCKET_NAME}/{key} 'from minio")
+            minio_client.fget_object(BUCKET_NAME, key, temp_fullpath)
+            logging.info(
+                f"{uid} - Loaded '{BUCKET_NAME}/{key}' and stored temporarily at {temp_fullpath}"
+            )
 
-            logging.info(f"Beginning upload of '{temp_fullpath}' to video_io service...")
+            logging.info(
+                f"{uid} - Beginning upload of '{temp_fullpath}' to video_io service..."
+            )
             try:
+                loop = asyncio.new_event_loop()
+                coroutine = video_client.upload_video(
+                    path=temp_subpath,
+                    local_cache_directory=VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY,
+                )
+                response = loop.run_until_complete(coroutine)
+                if "error" in response:
+                    raise VideoUploadError(
+                        f"{uid} - Unable to upload video file to video_io service: {response}"
+                    )
 
-                response = asyncio.run(video_client.upload_video(path=temp_subpath, local_cache_directory=VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY))
-                if 'error' in response:
-                    raise VideoUploadError(f"Unable to upload video file to video_io service: {response}")
+                logging.info(
+                    f"{uid} - Successfully uploaded '{temp_fullpath}' to video_io service"
+                )
 
-                logging.info(f"Successfully uploaded '{temp_fullpath}' to video_io service")
+                logging.info(f"{uid} - Removing '{BUCKET_NAME}/{key}' from Minio...")
+                minio_client.remove_object(BUCKET_NAME, key)
+                logging.info(f"{uid} - Removed '{BUCKET_NAME}/{key}' from Minio")
 
-                logging.info(f"Removing '{BUCKET_NAME}/{key}' from Minio...")
-                minioClient.remove_object(BUCKET_NAME, key)
-                logging.info(f"Removed '{BUCKET_NAME}/{key}' from Minio")
-
-                emit('wf_camera_uploader', {"success": 1}, {"environment": ENVIRONMENT_ID, "type": "success"})
+                emit(
+                    "wf_camera_uploader",
+                    {"success": 1},
+                    {"uid": uid, "environment": ENVIRONMENT_ID, "type": "success"},
+                )
             except Exception as e:
-                emit('wf_camera_uploader', {"fail": 1}, {"environment": ENVIRONMENT_ID, "type": "error"})
+                emit(
+                    "wf_camera_uploader",
+                    {"fail": 1},
+                    {"uid": uid, "environment": ENVIRONMENT_ID, "type": "error"},
+                )
                 raise e
         except VideoUploadError as e:
-            logging.error(f"Failed uploading '{key}': {e}")
+            logging.error(f"{uid} - Failed uploading '{key}': {e}")
         except MinioException as e:
             # this was probably a re-queue of a failed delete.
-            logging.error(f"Could not remove '{key}' from minio, unable to delete file from Minio service: {e}")
+            logging.error(
+                f"{uid} - Could not remove '{key}' from minio, unable to delete file from Minio service: {e}"
+            )
         except Exception as e:
-            logging.error(f"Unexpected error attempting to upload '{key}' to video_io service: {e}")
+            logging.error(
+                f"{uid} - Unexpected error attempting to upload '{key}' to video_io service: {e}"
+            )
         finally:
-            logging.info(f"Removing '{key}' from Redis cache...")
+            logging.info(f"{uid} - Removing '{key}' from Redis cache...")
             res = redis.hdel(EVENTS_KEY_ACTIVE, key)
-            logging.info(f"Removed '{key}' from Redis cache: {res}")
+            logging.info(f"{uid} - Removed '{key}' from Redis cache: {res}")
 
         os.unlink(temp_fullpath)
 
@@ -124,28 +161,55 @@ def get_redis():
 
 
 def get_minio_client():
-    return Minio(MINIO_HOST, access_key=MINIO_KEY, secret_key=MINIO_SECRET, secure=False)
+    return Minio(
+        MINIO_HOST, access_key=MINIO_KEY, secret_key=MINIO_SECRET, secure=False
+    )
 
 
-def main():
-    logging.debug("uploader starting up")
-
-    redis = get_redis()
-    minioClient = get_minio_client()
-    video_client = video_io.client.VideoStorageClient()
-
-    with open(os.path.join(HERE, "next.lua"), 'r', encoding="utf8") as nfp:
+def key_generator(redis):
+    with open(os.path.join(HERE, "next.lua"), "r", encoding="utf8") as nfp:
         next_script = redis.register_script(nfp.read())
 
     while True:
         try:
-            while True:
-                process_file(video_client, minioClient, redis, next_script)
+            # I think this may be crap, sort of looks like it raises an error if the hash is empty
+            key = next_script(args=[EVENTS_KEY]).decode("utf-8")
         except Exception as e:
-            logging.error(f"Upload failed: {e}")
-            from traceback import print_exc
-            print_exc()
+            logging.error(f"Failed to load next key from Redis cache: {e}")
+            key = None
+            time.sleep(2)
+
+        yield key
 
 
-if __name__ == '__main__':
+def main():
+    logging.debug("Uploader starting up")
+
+    redis = get_redis()
+    minio_client = get_minio_client()
+    video_client = video_io.client.VideoStorageClient()
+
+    partial_process_file = partial(
+        process_file, video_client=video_client, minio_client=minio_client, redis=redis
+    )
+    while True:
+        max_workers = (
+            int(UPLOADER_MAX_WORKERS)
+            if UPLOADER_MAX_WORKERS is not None and UPLOADER_MAX_WORKERS.isdigit()
+            else None
+        )
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # pylint: disable=W0212
+            logging.info(f"Running uploader with {executor._max_workers} workers")
+            for key in key_generator(redis):
+                if key is None:
+                    logging.warning(
+                        "Next Redis key returned was 'None', assuming queue is empty"
+                    )
+                    continue
+
+                executor.submit(lambda k: partial_process_file(key=k), key)
+
+
+if __name__ == "__main__":
     main()
