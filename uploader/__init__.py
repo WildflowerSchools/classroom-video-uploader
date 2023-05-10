@@ -90,8 +90,7 @@ def process_file(video_client, minioClient, redis, next_script):
             logging.info(f"Beginning upload of '{temp_fullpath}' to video_io service...")
             try:
 
-                upload_task = video_client.upload_video(path=temp_subpath, local_cache_directory=VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY)
-                response = await asyncio.wait_for(upload_task, timeout=10)
+                response = asyncio.run(video_client.upload_video(path=temp_subpath, local_cache_directory=VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY))
                 if 'error' in response:
                     raise VideoUploadError(f"Unable to upload video file to video_io service: {response}")
 
@@ -102,8 +101,6 @@ def process_file(video_client, minioClient, redis, next_script):
                 logging.info(f"Removed '{BUCKET_NAME}/{key}' from Minio")
 
                 emit('wf_camera_uploader', {"success": 1}, {"environment": ENVIRONMENT_ID, "type": "success"})
-            except asyncio.TimeoutError:
-                logging.error("Failed writing video to video_io service because of timeout, video will be requeued for upload")
             except Exception as e:
                 emit('wf_camera_uploader', {"fail": 1}, {"environment": ENVIRONMENT_ID, "type": "error"})
                 raise e
