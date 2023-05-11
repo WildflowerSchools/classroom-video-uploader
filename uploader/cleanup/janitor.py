@@ -82,8 +82,10 @@ def cleanup_active():
 
 
 def queue_missed():
-    """Lists objects in minio and finds items that are
-    older than an hour and queues them if they have
+    # The option to clear keys is helpful for debugging
+    # clear_all_keys(EVENTS_KEY)
+
+    """Lists objects in minio and queues items if they have
     not been queued. Will only add if the queue is
     shorter than MAX_QUEUE (default: 1000).
     """
@@ -91,18 +93,25 @@ def queue_missed():
     minioClient = get_minio_client()
     while True:
         qlen = redis.hlen(EVENTS_KEY)
-        logging.info(f"Redis queue has {qlen} items in it")
+        logging.info(
+            f"Updating Redis queue. Queue contains {qlen} items before update..."
+        )
+
+        if qlen >= MAX_QUEUE:
+            logging.info(f"Redis queue is full, not adding add'l items")
         if qlen < MAX_QUEUE:
-            objects = list(minioClient.list_objects(BUCKET_NAME))
-            objects = [
-                obj.object_name for obj in objects if obj.object_name != "frames"
-            ]
-            if len(objects):
-                limit = min(100, (MAX_QUEUE - qlen) / len(objects))
-                for obj in objects:
-                    name = obj
-                    logging.info(f"Inspecting {name} to add items to queue")
-                    qlen += find_files(name, redis, minioClient, limit)
+            for obj in minioClient.list_objects(BUCKET_NAME, recursive=True):
+                key = obj.object_name
+                if redis.hexists(EVENTS_KEY, key) or redis.hexists(
+                    EVENTS_KEY_ACTIVE, key
+                ):
+                    continue
+
+                redis.hset(EVENTS_KEY, key, key)
+                qlen += 1
+                if qlen >= MAX_QUEUE:
+                    break
+        logging.info(f"Updated Redis queue. Queue now contains {qlen} items")
         emit(
             "wf_camera_uploader",
             {"queue": qlen},
@@ -111,14 +120,11 @@ def queue_missed():
         time.sleep(30)
 
 
-def find_files(name, redis, minioClient, limit):
-    objects = minioClient.list_objects(BUCKET_NAME, prefix=name, recursive=True)
-    count = 0
-    for obj in objects:
-        if count >= limit:
-            break
-        key = obj.object_name
-        redis.hset(EVENTS_KEY, key, key)
-        print(key)
-        count += 1
-    return count
+def clear_all_keys(hash_name: None):
+    redis = get_redis()
+
+    if hash_name is None:
+        return
+    all_keys = list(redis.hgetall(hash_name).keys())
+    if len(all_keys) > 0:
+        redis.hdel(hash_name, *all_keys)
