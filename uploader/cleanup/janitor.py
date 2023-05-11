@@ -49,7 +49,6 @@ def cleanup_active():
     there it is put back on the queue.
     """
     redis = get_redis()
-    minioClient = get_minio_client()
     old_keys = set()
     while True:
         keys = redis.hkeys(EVENTS_KEY_ACTIVE)
