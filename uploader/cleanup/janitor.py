@@ -60,10 +60,7 @@ def cleanup_active():
         for key in keys:
             if key in old_keys:
                 try:
-                    minioClient.stat_object(BUCKET_NAME, key)
                     rcnt += 1
-                    value = redis.hget(EVENTS_KEY_ACTIVE, key)
-                    redis.hset(EVENTS_KEY, key, value)
                     redis.hdel(EVENTS_KEY_ACTIVE, key)
                 except Exception:
                     redis.hdel(EVENTS_KEY_ACTIVE, key)
@@ -78,7 +75,7 @@ def cleanup_active():
             {"environment": ENVIRONMENT_ID, "type": "cleanup"},
         )
         capture_disk_usage_stats()
-        time.sleep(60)
+        time.sleep(300)
 
 
 def queue_missed():
