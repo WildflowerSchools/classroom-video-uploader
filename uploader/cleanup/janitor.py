@@ -98,7 +98,7 @@ def queue_missed():
         )
 
         if qlen >= MAX_QUEUE:
-            logging.info(f"Redis queue is full, not adding add'l items")
+            logging.info("Redis queue is full, not adding add'l items")
         if qlen < MAX_QUEUE:
             for obj in minioClient.list_objects(BUCKET_NAME, recursive=True):
                 key = obj.object_name
