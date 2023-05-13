@@ -4,6 +4,7 @@ from datetime import datetime
 from functools import partial
 import logging
 import os
+import queue
 import time
 import uuid
 
@@ -79,9 +80,9 @@ def fix_ts(ts):
 
 def process_file(video_client, minio_client, redis, key=None):
     uid = uuid.uuid4().hex[:8]
+    logging.info(f"{uid} - Attempting upload of {key} to video_io service...")
 
     if key:
-        logging.info(f"{uid} - Attempting upload of {key} to video_io service...")
         if hasattr(key, "endswith") and not (
             key.endswith("mp4") or key.endswith("h264")
         ):
@@ -189,18 +190,21 @@ def main():
     minio_client = get_minio_client()
     video_client = video_io.client.VideoStorageClient()
 
+    max_workers = (
+        int(UPLOADER_MAX_WORKERS)
+        if UPLOADER_MAX_WORKERS is not None and UPLOADER_MAX_WORKERS.isdigit()
+        else None
+    )
+
     partial_process_file = partial(
         process_file, video_client=video_client, minio_client=minio_client, redis=redis
     )
-    while True:
-        max_workers = (
-            int(UPLOADER_MAX_WORKERS)
-            if UPLOADER_MAX_WORKERS is not None and UPLOADER_MAX_WORKERS.isdigit()
-            else None
-        )
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # pylint: disable=W0212
-            logging.info(f"Running uploader with {executor._max_workers} workers")
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # pylint: disable=W0212
+        logging.info(f"Running uploader with {executor._max_workers} workers")
+        q = queue.Queue(maxsize=executor._max_workers)
+
+        while True:
             for key in key_generator(redis):
                 if key is None:
                     logging.warning(
@@ -208,7 +212,13 @@ def main():
                     )
                     continue
 
-                executor.submit(lambda k: partial_process_file(key=k), key)
+                # Use a queue in order to block the loop and keep threadpoolexecutor from creating
+                # futures for all tasks. We want to do this to keep the lua script from putting
+                # everything on the "active" list. The queue will fill up, block, and as thread futures
+                # complete the queue is cleaned up
+                q.put(1, block=True)
+                future = executor.submit(lambda k: partial_process_file(key=k), key)
+                future.add_done_callback(q.get)
 
 
 if __name__ == "__main__":
