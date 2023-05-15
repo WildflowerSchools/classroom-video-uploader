@@ -23,14 +23,14 @@ trio = ["trio (>=0.16,<0.22)"]
 
 [[package]]
 name = "astroid"
-version = "2.15.4"
+version = "2.15.5"
 description = "An abstract syntax tree for Python with inference support."
 category = "dev"
 optional = false
 python-versions = ">=3.7.2"
 files = [
-    {file = "astroid-2.15.4-py3-none-any.whl", hash = "sha256:a1b8543ef9d36ea777194bc9b17f5f8678d2c56ee6a45b2c2f17eec96f242347"},
-    {file = "astroid-2.15.4.tar.gz", hash = "sha256:c81e1c7fbac615037744d067a9bb5f9aeb655edf59b63ee8b59585475d6f80d8"},
+    {file = "astroid-2.15.5-py3-none-any.whl", hash = "sha256:078e5212f9885fa85fbb0cf0101978a336190aadea6e13305409d099f71b2324"},
+    {file = "astroid-2.15.5.tar.gz", hash = "sha256:1039262575027b441137ab4a62a793a9b43defb42c32d5670f38686207cd780f"},
 ]
 
 [package.dependencies]
@@ -124,18 +124,18 @@ uvloop = ["uvloop (>=0.15.2)"]
 
 [[package]]
 name = "boto3"
-version = "1.26.131"
+version = "1.26.133"
 description = "The AWS SDK for Python"
 category = "main"
 optional = false
 python-versions = ">= 3.7"
 files = [
-    {file = "boto3-1.26.131-py3-none-any.whl", hash = "sha256:5b2b13d9f3430e3d5e768bf32097d5d6d16f47a4719f2656de67da49dd3e4de1"},
-    {file = "boto3-1.26.131.tar.gz", hash = "sha256:061d3270472b9be09901bb08a45e9871ac8f86a9b1c9c615535ca0223acd7582"},
+    {file = "boto3-1.26.133-py3-none-any.whl", hash = "sha256:62285ecee7629a4388d55ae369536f759622d68d5b9a0ced7c58a0c1a409c0f7"},
+    {file = "boto3-1.26.133.tar.gz", hash = "sha256:8ff0af0b25266a01616396abc19eb34dc3d44bd867fa4158985924128b9034fb"},
 ]
 
 [package.dependencies]
-botocore = ">=1.29.131,<1.30.0"
+botocore = ">=1.29.133,<1.30.0"
 jmespath = ">=0.7.1,<2.0.0"
 s3transfer = ">=0.6.0,<0.7.0"
 
@@ -144,14 +144,14 @@ crt = ["botocore[crt] (>=1.21.0,<2.0a0)"]
 
 [[package]]
 name = "botocore"
-version = "1.29.131"
+version = "1.29.133"
 description = "Low-level, data-driven core of boto 3."
 category = "main"
 optional = false
 python-versions = ">= 3.7"
 files = [
-    {file = "botocore-1.29.131-py3-none-any.whl", hash = "sha256:d0dea23bccdfd7c2f6d0cd3216cfbd7065bc3e9e7b1ef6fee0952b04f5d2cffd"},
-    {file = "botocore-1.29.131.tar.gz", hash = "sha256:ffbd85915b2624c545438a33c2624a809593720a10648f6e757fe50be4893188"},
+    {file = "botocore-1.29.133-py3-none-any.whl", hash = "sha256:b266185d7414a559952569005009a400de50af91fd3da44f05cf05b00946c4a7"},
+    {file = "botocore-1.29.133.tar.gz", hash = "sha256:7b38e540f73c921d8cb0ac72794072000af9e10758c04ba7f53d5629cc52fa87"},
 ]
 
 [package.dependencies]
@@ -880,18 +880,18 @@ files = [
 
 [[package]]
 name = "platformdirs"
-version = "3.5.0"
+version = "3.5.1"
 description = "A small Python package for determining appropriate platform-specific dirs, e.g. a \"user data dir\"."
 category = "dev"
 optional = false
 python-versions = ">=3.7"
 files = [
-    {file = "platformdirs-3.5.0-py3-none-any.whl", hash = "sha256:47692bc24c1958e8b0f13dd727307cff1db103fca36399f457da8e05f222fdc4"},
-    {file = "platformdirs-3.5.0.tar.gz", hash = "sha256:7954a68d0ba23558d753f73437c55f89027cf8f5108c19844d4b82e5af396335"},
+    {file = "platformdirs-3.5.1-py3-none-any.whl", hash = "sha256:e2378146f1964972c03c085bb5662ae80b2b8c06226c54b2ff4aa9483e8a13a5"},
+    {file = "platformdirs-3.5.1.tar.gz", hash = "sha256:412dae91f52a6f84830f39a8078cecd0e866cb72294a5c66808e74d5e88d251f"},
 ]
 
 [package.extras]
-docs = ["furo (>=2023.3.27)", "proselint (>=0.13)", "sphinx (>=6.1.3)", "sphinx-autodoc-typehints (>=1.23,!=1.23.4)"]
+docs = ["furo (>=2023.3.27)", "proselint (>=0.13)", "sphinx (>=6.2.1)", "sphinx-autodoc-typehints (>=1.23,!=1.23.4)"]
 test = ["appdirs (==1.4.4)", "covdefaults (>=2.3)", "pytest (>=7.3.1)", "pytest-cov (>=4)", "pytest-mock (>=3.10)"]
 
 [[package]]
@@ -1268,6 +1268,18 @@ files = [
 doc = ["reno", "sphinx", "tornado (>=4.5)"]
 
 [[package]]
+name = "toml"
+version = "0.10.2"
+description = "Python Library for Tom's Obvious, Minimal Language"
+category = "main"
+optional = false
+python-versions = ">=2.6, !=3.0.*, !=3.1.*, !=3.2.*"
+files = [
+    {file = "toml-0.10.2-py2.py3-none-any.whl", hash = "sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b"},
+    {file = "toml-0.10.2.tar.gz", hash = "sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f"},
+]
+
+[[package]]
 name = "tomli"
 version = "2.0.1"
 description = "A lil' TOML parser"
@@ -1387,23 +1399,23 @@ requests = ">=2.28.2,<3.0.0"
 
 [[package]]
 name = "wf-gqlpycgen"
-version = "0.7.3"
-description = "GraphQL Python CLient Generator"
+version = "0.7.4"
+description = ""
 category = "main"
 optional = false
-python-versions = "*"
+python-versions = ">=3.8,<3.12"
 files = [
-    {file = "wf-gqlpycgen-0.7.3.tar.gz", hash = "sha256:c826f09525068db3cd9d01e101d954527c6a488c4b08dfc1610408580acdf5bb"},
+    {file = "wf_gqlpycgen-0.7.4-py3-none-any.whl", hash = "sha256:55fef1ea10d9b75b7b21f5a2c1e35a79de4f8c51f5cd1f8dced79e2b8d505f36"},
+    {file = "wf_gqlpycgen-0.7.4.tar.gz", hash = "sha256:2fd979b1563e338152392ce2e57f773ba2d4ca8459f9213bedbaea8e185c3ede"},
 ]
 
 [package.dependencies]
-click = ">=6.7"
-Jinja2 = ">=2.10"
-requests = ">=2.21.0"
-tenacity = ">=5.1.1"
-
-[package.extras]
-test = ["coverage", "mock", "nose", "rednose"]
+cachetools = ">=5.3.0,<6.0.0"
+click = ">=8.1.3,<9.0.0"
+jinja2 = ">=3.1.2,<4.0.0"
+requests = ">=2.28.2,<3.0.0"
+tenacity = ">=8.2.2,<9.0.0"
+toml = ">=0.10.2,<0.11.0"
 
 [[package]]
 name = "wf-honeycomb-io"
@@ -1440,14 +1452,14 @@ wf-gqlpycgen = ">=0.7.3"
 
 [[package]]
 name = "wf-video-io"
-version = "3.2.2"
+version = "3.2.3"
 description = "Library for working with video files and interacting with the wildflower video-service"
 category = "main"
 optional = false
-python-versions = ">=3.8,<4.0"
+python-versions = ">=3.8,<3.12"
 files = [
-    {file = "wf-video-io-3.2.2.tar.gz", hash = "sha256:1df0791365129244def2a44577ac13ae3ce3ca80d87a8d8075125813260ef2af"},
-    {file = "wf_video_io-3.2.2-py3-none-any.whl", hash = "sha256:6a2a7d1a0014b9409212bc44c6b5aa43d50158bccb79a9787485740cde5ddba5"},
+    {file = "wf_video_io-3.2.3-py3-none-any.whl", hash = "sha256:c11e563253ebbea15af605f2614667e60f69771a3369f5fd2c882d782b52d4a4"},
+    {file = "wf_video_io-3.2.3.tar.gz", hash = "sha256:32777db1d13909472a405fd7e78a0730c69b97eeb3bd150e85d6494f0df988da"},
 ]
 
 [package.dependencies]
@@ -1459,6 +1471,7 @@ tenacity = ">=8.1.0,<9.0.0"
 urllib3 = ">=1.26.12,<2.0.0"
 wf-cv-utils = ">=3.4.0"
 wf-fastapi-auth0 = ">=1.0"
+wf-gqlpycgen = ">=0.7.4,<0.8.0"
 wf-honeycomb-io = ">=2.0.0"
 
 [[package]]
@@ -1548,5 +1561,5 @@ files = [
 
 [metadata]
 lock-version = "2.0"
-python-versions = "^3.8"
-content-hash = "c3a62b1fecce49f12a0a40e3fd0acc57ae559ebcfd4c2ea5d15f3d333600eeea"
+python-versions = ">=3.8,<3.12"
+content-hash = "d31228de4a7edadadeaca9ee9623544a86240a0919961919071a14f6c9b96a54"
