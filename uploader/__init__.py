@@ -27,7 +27,7 @@ with open(BOOT_CONFIG_PATH, "r", encoding="utf8") as fp:
 ENVIRONMENT_ID = config.get("environment-id", "unassigned")
 
 UPLOADER_MAX_WORKERS = os.environ.get(
-    "UPLOADER_WORKERS", None
+    "UPLOADER_MAX_WORKERS", None
 )  # Will default to ThreadPoolExecutor's preference
 
 EVENTS_KEY = os.environ.get("EVENTS_KEY", "minio-video-events")
