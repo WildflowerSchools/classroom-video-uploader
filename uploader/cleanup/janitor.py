@@ -110,8 +110,7 @@ def queue_missed():
                     last_failed_at = datetime.fromisoformat(failed_value['last_failed_at'])
                     if (datetime.now() - last_failed_at).total_seconds() <= 600:
                         continue
-                    else:
-                        logging.info(f"Retrying failed event {key}")
+                    logging.info(f"Retrying failed event {key}")
 
                 redis.hset(EVENTS_KEY, key, key)
                 qlen += 1

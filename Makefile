@@ -1,4 +1,4 @@
-VERSION ?= 79
+VERSION ?= 80
 
 .PHONY: build
 
