@@ -2,6 +2,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import partial
+import json
 import logging
 import os
 import queue
@@ -16,6 +17,7 @@ import yaml
 import video_io.client
 import video_io.config
 
+from uploader.json_serializer import json_serializer
 from uploader.metric import emit
 
 
@@ -32,6 +34,7 @@ UPLOADER_MAX_WORKERS = os.environ.get(
 
 EVENTS_KEY = os.environ.get("EVENTS_KEY", "minio-video-events")
 EVENTS_KEY_ACTIVE = f"{EVENTS_KEY}.active"
+EVENTS_KEY_FAILED = f"{EVENTS_KEY}.failed"
 BUCKET_NAME = os.environ.get("BUCKET_NAME", "videos")
 REDIS_HOST = os.environ.get("UPLOADER_REDIS_HOST")
 REDIS_PASSWORD = os.environ.get("UPLOADER_REDIS_PASSWORD", None)
@@ -136,12 +139,37 @@ def process_file(video_client, minio_client, redis, key=None):
                     {"success": 1},
                     {"uid": uid, "environment": ENVIRONMENT_ID, "type": "success"},
                 )
+
+                if redis.hexists(EVENTS_KEY_FAILED, key):
+                    redis.hdel(EVENTS_KEY_FAILED, key)
             except Exception as e:
                 emit(
                     "wf_camera_uploader",
                     {"fail": 1},
                     {"uid": uid, "environment": ENVIRONMENT_ID, "type": "error"},
                 )
+
+                failed_value = {
+                    "last_failed_at": datetime.utcnow(),
+                    "failed_count": 0
+                }
+                if redis.hexists(EVENTS_KEY_FAILED, key):
+                    failed_value = json.loads(redis.hget(EVENTS_KEY_FAILED, key))
+
+                failed_value['last_failed_at'] = datetime.utcnow()
+                failed_value['failed_count'] += 1
+                if failed_value['failed_count'] > 3:
+                    logging.warning(f"{uid} - Failed uploading too many times, removing video for {key}")
+
+                    redis.hdel(EVENTS_KEY_FAILED, key)
+
+                    logging.warning(f"{uid} - Removing '{BUCKET_NAME}/{key}' from Minio...")
+                    minio_client.remove_object(BUCKET_NAME, key)
+                    logging.warning(f"{uid} - Removed '{BUCKET_NAME}/{key}' from Minio")
+                else:
+                    logging.warning(f"{uid} - Failed uploading '{key}' - attempt #{failed_value['failed_count']}, adding to the failed retry queue")
+                    redis.hset(EVENTS_KEY_FAILED, key, json.dumps(failed_value, default=json_serializer))
+
                 raise e
         except VideoUploadError as e:
             logging.error(f"{uid} - Failed uploading '{key}': {e}")
