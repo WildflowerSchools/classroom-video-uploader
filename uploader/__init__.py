@@ -120,6 +120,8 @@ def process_file(video_client, minio_client, redis, key=None):
                 except TimeoutError:
                     logging.error(f"{uid} - AsyncIO thread loop timeout, unable to upload video file to video_io service")
                     return
+                finally:
+                    loop.close()
 
                 if "error" in response:
                     raise VideoUploadError(
