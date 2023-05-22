@@ -1,8 +1,12 @@
 import asyncio
+import concurrent
+from concurrent import futures
 from datetime import datetime
+from functools import partial
 import json
 import logging
 import os
+import threading
 import time
 import uuid
 
@@ -79,6 +83,7 @@ def fix_ts(ts):
 
 
 async def process_file(video_client, minio_client, redis, key=None):
+    # time.sleep(5)
     uid = uuid.uuid4().hex[:8]
     logging.info(f"{uid} - Attempting upload of {key} to video_io service...")
 
@@ -254,6 +259,16 @@ async def video_consumer(queue: asyncio.Queue, redis, minio_client, video_client
         queue.task_done()
 
 
+def run_in_new_loop(corofn, *args):
+    loop = asyncio.new_event_loop()
+    try:
+        coro = corofn(*args)
+        asyncio.run_coroutine_threadsafe(coro, loop)
+        loop.run_forever()
+    finally:
+        loop.close()
+
+
 async def main():
     max_workers = (
         int(UPLOADER_MAX_WORKERS)
@@ -267,24 +282,24 @@ async def main():
 
     queue: asyncio.Queue = asyncio.Queue(max_workers)
 
-    consumers = []
+    # consumers = []
+    loop = asyncio.get_running_loop()
+
     for _ in range(max_workers):
-        consumers.append(
-            asyncio.create_task(
-                video_consumer(
-                    queue=queue,
-                    redis=redis,
-                    minio_client=minio_client,
-                    video_client=video_client,
-                )
-            )
-        )
+        video_consumer_partial = partial(video_consumer, queue=queue,
+                redis=redis,
+                minio_client=minio_client,
+                video_client=video_client)
+
+        t = threading.Thread(target=run_in_new_loop, args=(video_consumer_partial,), daemon=True)
+        t.start()
 
     await video_producer(queue=queue, redis=redis)
     await queue.join()
 
-    for c in consumers:
-        c.cancel()
+    # await asyncio.gather(*consumers)
+    # for c in consumers:
+    #     c.cancel()
 
 
 if __name__ == "__main__":
