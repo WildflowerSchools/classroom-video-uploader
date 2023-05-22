@@ -101,13 +101,16 @@ def queue_missed():
         if qlen < MAX_QUEUE:
             for obj in minioClient.list_objects(BUCKET_NAME, recursive=True):
                 key = obj.object_name
-                if (redis.hexists(EVENTS_KEY, key) or
-                        redis.hexists(EVENTS_KEY_ACTIVE, key)):
+                if redis.hexists(EVENTS_KEY, key) or redis.hexists(
+                    EVENTS_KEY_ACTIVE, key
+                ):
                     continue
 
                 if redis.hexists(EVENTS_KEY_FAILED, key):
                     failed_value = json.loads(redis.hget(EVENTS_KEY_FAILED, key))
-                    last_failed_at = datetime.fromisoformat(failed_value['last_failed_at'])
+                    last_failed_at = datetime.fromisoformat(
+                        failed_value["last_failed_at"]
+                    )
                     if (datetime.now() - last_failed_at).total_seconds() <= 600:
                         continue
                     logging.info(f"Retrying failed event {key}")
