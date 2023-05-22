@@ -113,7 +113,7 @@ async def process_file(video_client, minio_client, redis, key=None):
                 )
 
                 try:
-                    response = asyncio.wait_for(coroutine, 30)
+                    response = await asyncio.wait_for(coroutine, timeout=30)
                 except TimeoutError:
                     logging.error(
                         f"{uid} - AsyncIO thread loop timeout, unable to upload video file to video_io service"
