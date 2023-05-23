@@ -1,8 +1,11 @@
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from functools import partial
 import json
 import logging
 import os
+import queue
 import time
 import uuid
 
@@ -78,7 +81,7 @@ def fix_ts(ts):
     return ts
 
 
-async def process_file(video_client, minio_client, redis, key=None):
+def process_file(video_client, minio_client, redis, key=None):
     uid = uuid.uuid4().hex[:8]
     logging.info(f"{uid} - Attempting upload of {key} to video_io service...")
 
@@ -107,18 +110,20 @@ async def process_file(video_client, minio_client, redis, key=None):
                 f"{uid} - Beginning upload of '{temp_fullpath}' to video_io service..."
             )
             try:
+                loop = asyncio.new_event_loop()
                 coroutine = video_client.upload_video(
                     path=temp_subpath,
                     local_cache_directory=VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY,
                 )
-
                 try:
-                    response = await asyncio.wait_for(coroutine, timeout=30)
+                    response = loop.run_until_complete(asyncio.wait_for(coroutine, 30))
                 except TimeoutError:
                     logging.error(
                         f"{uid} - AsyncIO thread loop timeout, unable to upload video file to video_io service"
                     )
                     return
+                finally:
+                    loop.close()
 
                 if "error" in response:
                     raise VideoUploadError(
@@ -177,7 +182,6 @@ async def process_file(video_client, minio_client, redis, key=None):
                     )
 
                 raise e
-
         except VideoUploadError as e:
             logging.error(f"{uid} - Failed uploading '{key}': {e}")
         except MinioException as e:
@@ -203,6 +207,7 @@ async def process_file(video_client, minio_client, redis, key=None):
                 )
 
     logging.info(f"{uid} - Task finished")
+
 
 
 def get_redis():
@@ -231,61 +236,43 @@ def key_generator(redis):
         yield key
 
 
-async def video_producer(queue: asyncio.Queue, redis):
-    while True:
-        for key in key_generator(redis):
-            if key is None:
-                logging.warning(
-                    "Next Redis key returned was 'None', assuming queue is empty"
-                )
-                continue
-
-            await queue.put(key)
-
-
-async def video_consumer(queue: asyncio.Queue, redis, minio_client, video_client):
-    while True:
-        key = await queue.get()
-
-        await process_file(
-            video_client=video_client, minio_client=minio_client, redis=redis, key=key
-        )
-
-        queue.task_done()
-
-
-async def main():
-    max_workers = (
-        int(UPLOADER_MAX_WORKERS)
-        if UPLOADER_MAX_WORKERS is not None and UPLOADER_MAX_WORKERS.isdigit()
-        else min(32, os.cpu_count() + 4)
-    )
+def main():
+    logging.debug("Uploader starting up")
 
     redis = get_redis()
     minio_client = get_minio_client()
     video_client = video_io.client.VideoStorageClient()
 
-    queue: asyncio.Queue = asyncio.Queue(max_workers)
+    max_workers = (
+        int(UPLOADER_MAX_WORKERS)
+        if UPLOADER_MAX_WORKERS is not None and UPLOADER_MAX_WORKERS.isdigit()
+        else None
+    )
 
-    consumers = []
-    for _ in range(max_workers):
-        consumers.append(
-            asyncio.create_task(
-                video_consumer(
-                    queue=queue,
-                    redis=redis,
-                    minio_client=minio_client,
-                    video_client=video_client,
-                )
-            )
-        )
+    partial_process_file = partial(
+        process_file, video_client=video_client, minio_client=minio_client, redis=redis
+    )
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # pylint: disable=W0212
+        logging.info(f"Running uploader with {executor._max_workers} workers")
+        q = queue.Queue(maxsize=executor._max_workers)
 
-    await video_producer(queue=queue, redis=redis)
-    await queue.join()
+        while True:
+            for key in key_generator(redis):
+                if key is None:
+                    logging.warning(
+                        "Next Redis key returned was 'None', assuming queue is empty"
+                    )
+                    continue
 
-    for c in consumers:
-        c.cancel()
+                # Use a queue in order to block the loop and keep threadpoolexecutor from creating
+                # futures for all tasks. We want to do this to keep the lua script from putting
+                # everything on the "active" list. The queue will fill up, block, and as thread futures
+                # complete the queue is cleaned up
+                q.put(1, block=True)
+                future = executor.submit(lambda k: partial_process_file(key=k), key)
+                future.add_done_callback(q.get)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
