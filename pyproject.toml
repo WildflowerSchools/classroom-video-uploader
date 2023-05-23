@@ -14,7 +14,7 @@ PyYAML = ">=4.2b1"
 minio = ">=4.0.17"
 click = ">=7.0"
 pytelegraf = ">=0.3.3"
-wf-video-io = ">=3.2.3"
+wf-video-io = {path = "../wf-video-io", develop = true}
 
 [tool.poetry.group.dev.dependencies]
 pylint = "^2.17.4"
