@@ -1,4 +1,5 @@
 import asyncio
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from functools import partial
@@ -82,132 +83,134 @@ def fix_ts(ts):
 
 
 def process_file(video_client, minio_client, redis, key=None):
+    pass
+
+
+def process_files(video_client, minio_client, redis, keys: list[str] = None):
     uid = uuid.uuid4().hex[:8]
-    logging.info(f"{uid} - Attempting upload of {key} to video_io service...")
+    logging.info(f"{uid} - Attempting upload of {keys} to video_io service...")
 
-    if key:
-        if hasattr(key, "endswith") and not (
-            key.endswith("mp4") or key.endswith("h264")
-        ):
-            redis.hdel(EVENTS_KEY_ACTIVE, key)
-            logging.info(
-                f"{uid} - Skipping {key}, file doesn't appear to be an mp4 or h264"
+    if keys:
+        files_for_upload: dict = {}
+
+        for key in keys:
+            if hasattr(key, "endswith") and not (
+                key.endswith("mp4") or key.endswith("h264")
+            ):
+                redis.hdel(EVENTS_KEY_ACTIVE, key)
+                logging.info(
+                    f"{uid} - Skipping {key}, file doesn't appear to be an mp4 or h264"
+                )
+                continue
+
+            video_path = os.path.normpath(
+                f"{ENVIRONMENT_ID}/{key}"
             )
-            return
-
-        temp_subpath = os.path.normpath(f"{ENVIRONMENT_ID}/{key}")
-        temp_fullpath = os.path.normpath(
-            f"{VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY}/{ENVIRONMENT_ID}/{key}"
-        )
-        try:
-            logging.info(f"{uid} - Loading file '{BUCKET_NAME}/{key} 'from minio")
-            minio_client.fget_object(BUCKET_NAME, key, temp_fullpath)
-            logging.info(
-                f"{uid} - Loaded '{BUCKET_NAME}/{key}' and stored temporarily at {temp_fullpath}"
-            )
-
-            logging.info(
-                f"{uid} - Beginning upload of '{temp_fullpath}' to video_io service..."
+            tmp_fullpath = os.path.normpath(
+                f"{VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY}/{video_path}"
             )
             try:
-                loop = asyncio.new_event_loop()
-                coroutine = video_client.upload_video(
-                    path=temp_subpath,
-                    local_cache_directory=VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY,
-                )
-                try:
-                    response = loop.run_until_complete(asyncio.wait_for(coroutine, 30))
-                except TimeoutError:
-                    logging.error(
-                        f"{uid} - AsyncIO thread loop timeout, unable to upload video file to video_io service"
-                    )
-                    return
-                finally:
-                    loop.close()
-
-                if "error" in response:
-                    raise VideoUploadError(
-                        f"{uid} - Unable to upload video file to video_io service: {response}"
-                    )
-
+                logging.info(f"{uid} - Loading file '{BUCKET_NAME}/{key} 'from minio")
+                minio_client.fget_object(BUCKET_NAME, key, tmp_fullpath)
                 logging.info(
-                    f"{uid} - Successfully uploaded '{temp_fullpath}' to video_io service"
+                    f"{uid} - Loaded '{BUCKET_NAME}/{key}' and stored temporarily at {tmp_fullpath}"
                 )
 
-                logging.info(f"{uid} - Removing '{BUCKET_NAME}/{key}' from Minio...")
-                minio_client.remove_object(BUCKET_NAME, key)
-                logging.info(f"{uid} - Removed '{BUCKET_NAME}/{key}' from Minio")
-
-                emit(
-                    "wf_camera_uploader",
-                    {"success": 1},
-                    {"uid": uid, "environment": ENVIRONMENT_ID, "type": "success"},
+                files_for_upload[key] = video_path
+            except MinioException as e:
+                logging.error(
+                    f"{uid} - Could not fetch '{key}' from minio: {e}"
                 )
 
-                if redis.hexists(EVENTS_KEY_FAILED, key):
-                    redis.hdel(EVENTS_KEY_FAILED, key)
-            except Exception as e:
-                emit(
-                    "wf_camera_uploader",
-                    {"fail": 1},
-                    {"uid": uid, "environment": ENVIRONMENT_ID, "type": "error"},
-                )
+        upload_result = []
+        try:
+            logging.info(
+                f"{uid} - Beginning upload of '{','.join(files_for_upload.values())}' to video_io service..."
+            )
 
-                failed_value = {"last_failed_at": datetime.utcnow(), "failed_count": 0}
-                if redis.hexists(EVENTS_KEY_FAILED, key):
-                    failed_value = json.loads(redis.hget(EVENTS_KEY_FAILED, key))
+            loop = asyncio.new_event_loop()
+            coroutine = video_client.upload_videos(
+                paths=list(files_for_upload.values()),
+                local_cache_directory=VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY,
+            )
+            try:
+                upload_result = loop.run_until_complete(asyncio.wait_for(coroutine, 30))
+            except TimeoutError:
+                raise VideoUploadError(f"{uid} - AsyncIO thread loop timeout, unable to upload video file to video_io service")
+            finally:
+                loop.close()
 
-                failed_value["last_failed_at"] = datetime.utcnow()
-                failed_value["failed_count"] += 1
-                if failed_value["failed_count"] > 3:
-                    logging.warning(
-                        f"{uid} - Failed uploading too many times, removing video for {key}"
-                    )
-
-                    redis.hdel(EVENTS_KEY_FAILED, key)
-
-                    logging.warning(
-                        f"{uid} - Removing '{BUCKET_NAME}/{key}' from Minio..."
-                    )
-                    minio_client.remove_object(BUCKET_NAME, key)
-                    logging.warning(f"{uid} - Removed '{BUCKET_NAME}/{key}' from Minio")
-                else:
-                    logging.warning(
-                        f"{uid} - Failed uploading '{key}' - attempt #{failed_value['failed_count']}, adding to the failed retry queue"
-                    )
-                    redis.hset(
-                        EVENTS_KEY_FAILED,
-                        key,
-                        json.dumps(failed_value, default=json_serializer),
-                    )
-
-                raise e
+            successfully_uploaded_files = list(map(lambda f: f['path'], upload_result))
+            logging.info(
+                f"{uid} - Successfully uploaded {len(successfully_uploaded_files)} files to video_io service: '{''','''.join(successfully_uploaded_files)}'"
+            )
         except VideoUploadError as e:
             logging.error(f"{uid} - Failed uploading '{key}': {e}")
-        except MinioException as e:
-            # this was probably a re-queue of a failed delete.
-            logging.error(
-                f"{uid} - Could not remove '{key}' from minio, unable to delete file from Minio service: {e}"
-            )
-        except Exception as e:
-            logging.error(
-                f"{uid} - Unexpected error attempting to upload '{key}' to video_io service: {e}"
-            )
-        finally:
-            logging.info(f"{uid} - Removing '{key}' from Redis cache...")
-            res = redis.hdel(EVENTS_KEY_ACTIVE, key)
-            logging.info(f"{uid} - Removed '{key}' from Redis cache: {res}")
 
-        if os.path.exists(temp_fullpath):
+        # This isn't great, but for simplicity use the "path" arg in the response object to get back to the "key" value
+        upload_success_keys = list(map(lambda f: f['path'], upload_result))
+        for key, video_file_path in files_for_upload.items():
             try:
-                os.remove(temp_fullpath)
-            except OSError as e:
+                if video_file_path in upload_success_keys:
+                    logging.info(f"{uid} - Removing '{BUCKET_NAME}/{key}' from Minio...")
+                    minio_client.remove_object(BUCKET_NAME, key)
+                    logging.info(f"{uid} - Removed '{BUCKET_NAME}/{key}' from Minio")
+
+                    if redis.hexists(EVENTS_KEY_FAILED, key):
+                        redis.hdel(EVENTS_KEY_FAILED, key)
+                else:
+                    failed_value = {"last_failed_at": datetime.utcnow(), "failed_count": 0}
+                    if redis.hexists(EVENTS_KEY_FAILED, key):
+                        failed_value = json.loads(redis.hget(EVENTS_KEY_FAILED, key))
+
+                    failed_value["last_failed_at"] = datetime.utcnow()
+                    failed_value["failed_count"] += 1
+                    if failed_value["failed_count"] > 3:
+                        logging.warning(
+                            f"{uid} - Failed uploading too many times, removing video for {key}"
+                        )
+
+                        redis.hdel(EVENTS_KEY_FAILED, key)
+
+                        logging.warning(
+                            f"{uid} - Removing '{BUCKET_NAME}/{key}' from Minio..."
+                        )
+                        minio_client.remove_object(BUCKET_NAME, key)
+                        logging.warning(f"{uid} - Removed '{BUCKET_NAME}/{key}' from Minio")
+                    else:
+                        logging.warning(
+                            f"{uid} - Failed uploading '{key}' - attempt #{failed_value['failed_count']}, adding to the failed retry queue"
+                        )
+                        redis.hset(
+                            EVENTS_KEY_FAILED,
+                            key,
+                            json.dumps(failed_value, default=json_serializer),
+                        )
+            except MinioException as e:
+                # this was probably a re-queue of a failed delete.
                 logging.error(
-                    f"{uid} - Unable to remove temporarily staged video file '{temp_fullpath}'"
+                    f"{uid} - Could not remove '{key}' from minio, unable to delete file from Minio service: {e}"
                 )
+            except Exception as e:
+                logging.error(
+                    f"{uid} - Unexpected error attempting to upload '{key}' to video_io service: {e}"
+                )
+            finally:
+                logging.info(f"{uid} - Removing '{key}' from Redis cache...")
+                res = redis.hdel(EVENTS_KEY_ACTIVE, key)
+                logging.info(f"{uid} - Removed '{key}' from Redis cache: {res}")
+
+            temp_fullpath = f"{VIDEO_STORAGE_LOCAL_CACHE_DIRECTORY}/{video_file_path}"
+            if os.path.exists(temp_fullpath):
+                try:
+                    os.remove(temp_fullpath)
+                    logging.info(f"{uid} - Removed staged video file at '{temp_fullpath}' from disk")
+                except OSError as e:
+                    logging.error(
+                        f"{uid} - Unable to remove temporarily staged video file '{temp_fullpath}'"
+                    )
 
     logging.info(f"{uid} - Task finished")
-
 
 
 def get_redis():
@@ -249,13 +252,45 @@ def main():
         else None
     )
 
-    partial_process_file = partial(
-        process_file, video_client=video_client, minio_client=minio_client, redis=redis
-    )
+    # Get 'n' number of items from a queue at a time
+    def getn(q, n=4):
+        result = [q.get()]
+        try:
+            while len(result) < n:
+                result.append(q.get(block=False))
+        except queue.Empty:
+            pass
+        return result
+
+    # Pass the upload processor batches of videos for upload
+    # We read videos for processing from the queue_keys Queue
+    # We limit the number of upload processor workers using the queue_workers Queue
+    def batch_from_queue(_executor, _queue_workers, _queue_keys, ):
+        partial_process_file = partial(
+            process_files, video_client=video_client, minio_client=minio_client, redis=redis
+        )
+        while True:
+            keys = getn(_queue_keys)
+
+            # Use a queue in order to block the loop and keep threadpoolexecutor from creating
+            # futures for all tasks. We want to do this to keep the lua script from putting
+            # everything on the "active" list. The queue will fill up, block, and as thread futures
+            # complete the queue is cleaned up
+            _queue_workers.put(1, block=True)
+            future = _executor.submit(lambda k: partial_process_file(keys=k), keys)
+            future.add_done_callback(_queue_workers.get)
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # pylint: disable=W0212
-        logging.info(f"Running uploader with {executor._max_workers} workers")
-        q = queue.Queue(maxsize=executor._max_workers)
+        actual_workers = executor._max_workers
+        batch_size = 4
+
+        logging.info(f"Running uploader with {actual_workers} workers")
+        queue_workers = queue.Queue(maxsize=actual_workers)
+        queue_keys = queue.Queue(maxsize=actual_workers * batch_size)
+
+        batch = threading.Thread(target=batch_from_queue, daemon=False, args=(executor, queue_workers, queue_keys, ))
+        batch.start()
 
         while True:
             for key in key_generator(redis):
@@ -265,13 +300,7 @@ def main():
                     )
                     continue
 
-                # Use a queue in order to block the loop and keep threadpoolexecutor from creating
-                # futures for all tasks. We want to do this to keep the lua script from putting
-                # everything on the "active" list. The queue will fill up, block, and as thread futures
-                # complete the queue is cleaned up
-                q.put(1, block=True)
-                future = executor.submit(lambda k: partial_process_file(key=k), key)
-                future.add_done_callback(q.get)
+                queue_keys.put(key, block=True)
 
 
 if __name__ == "__main__":
