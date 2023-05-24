@@ -83,7 +83,7 @@ def fix_ts(ts):
 
 
 def process_file(video_client, minio_client, redis, key=None):
-    pass
+    process_files(video_client=video_client, minio_client=minio_client, redis=redis, keys=[key])
 
 
 def process_files(video_client, minio_client, redis, keys: list[str] = None):
@@ -135,8 +135,8 @@ def process_files(video_client, minio_client, redis, keys: list[str] = None):
             )
             try:
                 upload_result = loop.run_until_complete(asyncio.wait_for(coroutine, 30))
-            except TimeoutError:
-                raise VideoUploadError(f"{uid} - AsyncIO thread loop timeout, unable to upload video file to video_io service")
+            except TimeoutError as exc:
+                raise VideoUploadError(f"{uid} - AsyncIO thread loop timeout, unable to upload video file to video_io service") from exc
             finally:
                 loop.close()
 
@@ -145,7 +145,7 @@ def process_files(video_client, minio_client, redis, keys: list[str] = None):
                 f"{uid} - Successfully uploaded {len(successfully_uploaded_files)} files to video_io service: '{''','''.join(successfully_uploaded_files)}'"
             )
         except VideoUploadError as e:
-            logging.error(f"{uid} - Failed uploading '{key}': {e}")
+            logging.error(f"{uid} - Failed uploading videos: {e}")
 
         # This isn't great, but for simplicity use the "path" arg in the response object to get back to the "key" value
         upload_success_keys = list(map(lambda f: f['path'], upload_result))
