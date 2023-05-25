@@ -244,13 +244,19 @@ def main():
 
     redis = get_redis()
     minio_client = get_minio_client()
-    video_client = video_io.client.VideoStorageClient()
 
     max_workers = (
         int(UPLOADER_MAX_WORKERS)
         if UPLOADER_MAX_WORKERS is not None and UPLOADER_MAX_WORKERS.isdigit()
         else None
     )
+
+    connection_pool_size = max_workers
+    if connection_pool_size is None:
+        connection_pool_size = min(32, (os.cpu_count() or 1) + 4)
+
+    video_client = video_io.client.VideoStorageClient(connection_pool_size=connection_pool_size)
+    logging.info(f"Running video_client with connection pool size {connection_pool_size}")
 
     # Get 'n' number of items from a queue at a time
     def getn(q, n=4):
