@@ -140,24 +140,52 @@ def process_files(video_client, minio_client, redis, keys: list[str] = None):
             finally:
                 loop.close()
 
-            successfully_uploaded_files = list(map(lambda f: f['path'], upload_result))
-            logging.info(
-                f"{uid} - Successfully uploaded {len(successfully_uploaded_files)} files to video_io service: '{''','''.join(successfully_uploaded_files)}'"
-            )
+            successfully_uploaded_files = []
+            failed_uploaded_files = []
+            for result in upload_result:
+                if result['uploaded'] is True:
+                    successfully_uploaded_files.append(result)
+                else:
+                    failed_uploaded_files.append(result)
+
+            if len(successfully_uploaded_files) > 0:
+                logging.info(
+                    f"{uid} - Successfully uploaded {len(successfully_uploaded_files)} files to video_io service: '{''','''.join(list(map(lambda f: f['path'], successfully_uploaded_files)))}'"
+                )
+
+            if len(failed_uploaded_files) > 0:
+                logging.warning(
+                    f"{uid} - Failed uploading {len(failed_uploaded_files)} files to video_io service: {failed_uploaded_files}"
+                )
         except VideoUploadError as e:
             logging.error(f"{uid} - Failed uploading videos: {e}")
 
         # This isn't great, but for simplicity use the "path" arg in the response object to get back to the "key" value
-        upload_success_keys = list(map(lambda f: f['path'], upload_result))
+        upload_success_keys = []
+        bad_video_keys = []
+        for result in upload_result:
+            if 'upload_failed_reason' in result and result['upload_failed_reason'] == video_io.client.core.UPLOAD_FAILED_REASON_BAD_VIDEO:
+                bad_video_keys.append(result['path'])
+            elif result['uploaded'] is True:
+                upload_success_keys.append(result['path'])
+
         for key, video_file_path in files_for_upload.items():
             try:
                 if video_file_path in upload_success_keys:
-                    logging.info(f"{uid} - Removing '{BUCKET_NAME}/{key}' from Minio...")
+                    logging.info(f"{uid} - Deleting '{BUCKET_NAME}/{key}' from Minio...")
                     minio_client.remove_object(BUCKET_NAME, key)
-                    logging.info(f"{uid} - Removed '{BUCKET_NAME}/{key}' from Minio")
+                    logging.info(f"{uid} - Deleted '{BUCKET_NAME}/{key}' from Minio")
 
                     if redis.hexists(EVENTS_KEY_FAILED, key):
                         redis.hdel(EVENTS_KEY_FAILED, key)
+                elif video_file_path in bad_video_keys:
+                    redis.hdel(EVENTS_KEY_FAILED, key)
+
+                    logging.warning(
+                        f"{uid} - Deleting '{BUCKET_NAME}/{key}' from Minio because of corrupt video file..."
+                    )
+                    minio_client.remove_object(BUCKET_NAME, key)
+                    logging.warning(f"{uid} - Deleted '{BUCKET_NAME}/{key}' from Minio")
                 else:
                     failed_value = {"last_failed_at": datetime.utcnow(), "failed_count": 0}
                     if redis.hexists(EVENTS_KEY_FAILED, key):
@@ -165,31 +193,20 @@ def process_files(video_client, minio_client, redis, keys: list[str] = None):
 
                     failed_value["last_failed_at"] = datetime.utcnow()
                     failed_value["failed_count"] += 1
-                    if failed_value["failed_count"] > 3:
-                        logging.warning(
-                            f"{uid} - Failed uploading too many times, removing video for {key}"
-                        )
 
-                        redis.hdel(EVENTS_KEY_FAILED, key)
+                    logging.warning(
+                        f"{uid} - Failed uploading '{key}' - attempt #{failed_value['failed_count']}, adding to the failed retry queue"
+                    )
 
-                        logging.warning(
-                            f"{uid} - Removing '{BUCKET_NAME}/{key}' from Minio..."
-                        )
-                        minio_client.remove_object(BUCKET_NAME, key)
-                        logging.warning(f"{uid} - Removed '{BUCKET_NAME}/{key}' from Minio")
-                    else:
-                        logging.warning(
-                            f"{uid} - Failed uploading '{key}' - attempt #{failed_value['failed_count']}, adding to the failed retry queue"
-                        )
-                        redis.hset(
-                            EVENTS_KEY_FAILED,
-                            key,
-                            json.dumps(failed_value, default=json_serializer),
-                        )
+                    redis.hset(
+                        EVENTS_KEY_FAILED,
+                        key,
+                        json.dumps(failed_value, default=json_serializer),
+                    )
             except MinioException as e:
                 # this was probably a re-queue of a failed delete.
                 logging.error(
-                    f"{uid} - Could not remove '{key}' from minio, unable to delete file from Minio service: {e}"
+                    f"{uid} - Could not delete '{key}' from minio, unable to delete file from Minio service: {e}"
                 )
             except Exception as e:
                 logging.error(
@@ -204,10 +221,10 @@ def process_files(video_client, minio_client, redis, keys: list[str] = None):
             if os.path.exists(temp_fullpath):
                 try:
                     os.remove(temp_fullpath)
-                    logging.info(f"{uid} - Removed staged video file at '{temp_fullpath}' from disk")
+                    logging.info(f"{uid} - Deleted staged video file at '{temp_fullpath}' from disk")
                 except OSError as e:
                     logging.error(
-                        f"{uid} - Unable to remove temporarily staged video file '{temp_fullpath}'"
+                        f"{uid} - Unable to delete temporarily staged video file '{temp_fullpath}'"
                     )
 
     logging.info(f"{uid} - Task finished")
