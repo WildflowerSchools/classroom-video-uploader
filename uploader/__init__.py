@@ -306,7 +306,7 @@ def main():
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # pylint: disable=W0212
         actual_workers = executor._max_workers
-        batch_size = 4
+        batch_size = 5
 
         logging.info(f"Running uploader with {actual_workers} workers")
         queue_workers = queue.Queue(maxsize=actual_workers)
