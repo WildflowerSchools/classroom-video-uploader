@@ -288,12 +288,12 @@ def main():
     # Pass the upload processor batches of videos for upload
     # We read videos for processing from the queue_keys Queue
     # We limit the number of upload processor workers using the queue_workers Queue
-    def batch_from_queue(_executor, _queue_workers, _queue_keys, ):
+    def batch_from_queue(_executor, _queue_workers, _queue_keys, _batch_size=4, ):
         partial_process_file = partial(
             process_files, video_client=video_client, minio_client=minio_client, redis=redis
         )
         while True:
-            keys = getn(_queue_keys)
+            keys = getn(_queue_keys, n=_batch_size)
 
             # Use a queue in order to block the loop and keep threadpoolexecutor from creating
             # futures for all tasks. We want to do this to keep the lua script from putting
@@ -312,7 +312,7 @@ def main():
         queue_workers = queue.Queue(maxsize=actual_workers)
         queue_keys = queue.Queue(maxsize=actual_workers * batch_size)
 
-        batch = threading.Thread(target=batch_from_queue, daemon=False, args=(executor, queue_workers, queue_keys, ))
+        batch = threading.Thread(target=batch_from_queue, daemon=False, args=(executor, queue_workers, queue_keys, batch_size, ))
         batch.start()
 
         while True:
