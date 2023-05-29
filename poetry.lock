@@ -1452,14 +1452,14 @@ wf-gqlpycgen = ">=0.7.3"
 
 [[package]]
 name = "wf-video-io"
-version = "3.3.4"
+version = "3.3.5"
 description = "Library for working with video files and interacting with the wildflower video-service"
 category = "main"
 optional = false
 python-versions = ">=3.8,<3.12"
 files = [
-    {file = "wf_video_io-3.3.4-py3-none-any.whl", hash = "sha256:d2290a8bf99c07e03e2bc1e49e6bddfffc7461a7db7bdc6e828c1149b0fa7b76"},
-    {file = "wf_video_io-3.3.4.tar.gz", hash = "sha256:cdaf189ea0ea55a1d3337a2f77af9e6d0e894001d52715a8a08a3d2096fd42d9"},
+    {file = "wf_video_io-3.3.5-py3-none-any.whl", hash = "sha256:6cf0565eebe790de1e45d7be9570492bddbbed0ef818fd8f4308b4f1c6f4c723"},
+    {file = "wf_video_io-3.3.5.tar.gz", hash = "sha256:8456bce212c72593913ef57fc99d41bfc271f2fefa6984c6e0732fc9c9cb6df6"},
 ]
 
 [package.dependencies]
@@ -1562,4 +1562,4 @@ files = [
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.8,<3.12"
-content-hash = "68c4a0cc0dde53a37315c38903d090bd7ec4969d9f4f213582481f9b4d955b1b"
+content-hash = "dd53bf2e055103807d2df9c98fd7a13f687ccf57f2066eceb8b82c1cc89bf975"
